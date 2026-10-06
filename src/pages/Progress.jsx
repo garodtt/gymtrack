@@ -1,26 +1,33 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ChevronRight } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { fmt } from '../lib/progression'
+import LevelCard from '../components/LevelCard'
+import BadgeGrid from '../components/BadgeGrid'
+import { BADGES } from '../lib/gamification'
+
+const BADGE_COUNT = Object.keys(BADGES).length
 
 export default function Progress() {
   const [logs, setLogs] = useState([])
   const [sessions, setSessions] = useState([])
   const [exerciseId, setExerciseId] = useState('')
+  const [badges, setBadges] = useState(null)
 
   useEffect(() => {
     ;(async () => {
       const { data: l } = await supabase
-        .from('set_logs')
-        .select('exercise_id, weight_kg, reps, created_at, session_id, exercises(name)')
+        .from('set_logs_gymtrack')
+        .select('exercise_id, weight_kg, reps, created_at, session_id, exercises:exercises_gymtrack(name)')
         .order('created_at')
       setLogs(l ?? [])
       const { data: s } = await supabase
-        .from('workout_sessions')
-        .select('id, started_at, finished_at, routine_days(name)')
-        .not('finished_at', 'is', null)
+        .from('workout_sessions_gymtrack')
+        .select('id, started_at, finished_at, routine_days:routine_days_gymtrack(name)')
         .order('started_at', { ascending: false })
-        .limit(20)
+        .limit(30)
       setSessions(s ?? [])
     })()
   }, [])
@@ -52,6 +59,7 @@ export default function Progress() {
   return (
     <div className="stack">
       <h1>Progresso</h1>
+      <LevelCard onLoaded={(g) => setBadges(g?.badges ?? [])} />
       {exercises.length === 0 ? (
         <p className="muted">Registre seu primeiro treino para ver a evolução.</p>
       ) : (
@@ -77,14 +85,26 @@ export default function Progress() {
         </section>
       )}
 
+      {badges && (
+        <section className="stack-tight">
+          <h2>Emblemas <span className="muted">· {badges.length}/{BADGE_COUNT}</span></h2>
+          <BadgeGrid earned={badges} />
+        </section>
+      )}
+
       <h2>Últimos treinos</h2>
+      <p className="muted small-text">Toque em um treino para editar cargas, repetições, data ou excluir.</p>
       <ul className="list">
         {sessions.map((s) => {
-          const mins = Math.round((new Date(s.finished_at) - new Date(s.started_at)) / 60000)
+          const mins = s.finished_at ? Math.round((new Date(s.finished_at) - new Date(s.started_at)) / 60000) : null
           return (
             <li key={s.id}>
-              <span>{s.routine_days?.name ?? 'Treino'}</span>
-              <span className="muted">{new Date(s.started_at).toLocaleDateString('pt-BR')} · {mins} min</span>
+              <Link to={`/sessao/${s.id}`} className="row-link">
+                <span>{s.routine_days?.name ?? 'Treino'}</span>
+                <span className="muted">
+                  {new Date(s.started_at).toLocaleDateString('pt-BR')} · {mins !== null ? `${mins} min` : 'não finalizado'} <ChevronRight size={16} className="chev" />
+                </span>
+              </Link>
             </li>
           )
         })}

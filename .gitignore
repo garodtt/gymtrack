@@ -4,3 +4,4 @@ dist
 .env.local
 .netlify
 .DS_Store
+scripts/.cache

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Timer, SkipForward } from 'lucide-react'
 
 export default function RestTimer({ seconds, startKey }) {
   const [left, setLeft] = useState(0)
@@ -13,8 +14,9 @@ export default function RestTimer({ seconds, startKey }) {
   if (!left) return null
   return (
     <div className="timer">
-      Descanso: {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
-      <button className="link" onClick={() => setLeft(0)}>pular</button>
+      <Timer size={18} />
+      Descanso {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
+      <button className="link icon-text" onClick={() => setLeft(0)}><SkipForward size={16} /> pular</button>
     </div>
   )
 }

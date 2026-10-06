@@ -3,8 +3,8 @@ import { supabase } from './supabase'
 // Rotina ativa com dias e exercícios
 export async function getActiveRoutine() {
   const { data, error } = await supabase
-    .from('routines')
-    .select('*, routine_days(*, routine_exercises(*, exercises(*)))')
+    .from('routines_gymtrack')
+    .select('*, routine_days:routine_days_gymtrack(*, routine_exercises:routine_exercises_gymtrack(*, exercises:exercises_gymtrack(*)))')
     .eq('is_active', true)
     .eq('is_template', false)
     .maybeSingle()
@@ -16,13 +16,15 @@ export async function getActiveRoutine() {
   return data
 }
 
-// Próximo dia do ciclo, com base na última sessão finalizada
+export const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
+// Próximo dia do ciclo (A → B → C → A), com base na última sessão finalizada
 export async function getNextDay(routine) {
   const days = routine.routine_days
   if (!days.length) return null
   const ids = days.map((d) => d.id)
   const { data } = await supabase
-    .from('workout_sessions')
+    .from('workout_sessions_gymtrack')
     .select('routine_day_id')
     .in('routine_day_id', ids)
     .not('finished_at', 'is', null)
@@ -33,10 +35,30 @@ export async function getNextDay(routine) {
   return days[(idx + 1) % days.length]
 }
 
+// O que treinar hoje: se a rotina tem dias da semana marcados, segue a agenda;
+// senão, segue o ciclo.
+export async function getTodayPlan(routine) {
+  const days = routine.routine_days
+  const scheduled = days.some((d) => d.weekdays?.length)
+  if (!scheduled) return { day: await getNextDay(routine), restDay: false, scheduled }
+
+  const today = new Date().getDay()
+  const day = days.find((d) => d.weekdays.includes(today))
+  if (day) return { day, restDay: false, scheduled }
+
+  // dia de descanso: mostra o próximo treino agendado
+  for (let i = 1; i <= 7; i++) {
+    const wd = (today + i) % 7
+    const next = days.find((d) => d.weekdays.includes(wd))
+    if (next) return { day: null, restDay: true, scheduled, next, nextWeekday: wd }
+  }
+  return { day: null, restDay: true, scheduled }
+}
+
 // Séries da última sessão em que este exercício foi feito
 export async function getLastSets(exerciseId, excludeSessionId) {
   let q = supabase
-    .from('set_logs')
+    .from('set_logs_gymtrack')
     .select('session_id, set_number, weight_kg, reps, created_at')
     .eq('exercise_id', exerciseId)
     .order('created_at', { ascending: false })
@@ -49,18 +71,18 @@ export async function getLastSets(exerciseId, excludeSessionId) {
 }
 
 // Copia uma rotina (modelo ou gerada pela IA) para o usuário e ativa
-export async function saveRoutine({ name, description, source, days }, userId) {
-  await supabase.from('routines').update({ is_active: false }).eq('user_id', userId)
+export async function saveRoutine({ name, description, source, place = 'academia', days }, userId) {
+  await supabase.from('routines_gymtrack').update({ is_active: false }).eq('user_id', userId)
   const { data: routine, error } = await supabase
-    .from('routines')
-    .insert({ name, description, source, user_id: userId, is_active: true })
+    .from('routines_gymtrack')
+    .insert({ name, description, source, place, user_id: userId, is_active: true })
     .select()
     .single()
   if (error) throw error
 
   for (const [i, day] of days.entries()) {
     const { data: d, error: e1 } = await supabase
-      .from('routine_days')
+      .from('routine_days_gymtrack')
       .insert({ routine_id: routine.id, name: day.name, day_order: i + 1 })
       .select()
       .single()
@@ -75,7 +97,7 @@ export async function saveRoutine({ name, description, source, days }, userId) {
       rest_seconds: ex.rest_seconds,
       notes: ex.notes ?? null,
     }))
-    const { error: e2 } = await supabase.from('routine_exercises').insert(rows)
+    const { error: e2 } = await supabase.from('routine_exercises_gymtrack').insert(rows)
     if (e2) throw e2
   }
   return routine
